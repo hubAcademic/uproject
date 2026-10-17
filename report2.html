@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Reportes diarios de estudiantes</title>
+<style>
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);--bg:#f4f6fb;--card:#fff;--tx:#1f2937;--mu:#6b7280;--ac:#4f46e5;--bd:#e5e7eb;--ok:#16a34a}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#111827;--card:#1f2937;--tx:#f3f4f6;--mu:#9ca3af;--ac:#818cf8;--bd:#374151}}
+:root[data-theme="dark"]{--bg:#111827;--card:#1f2937;--tx:#f3f4f6;--mu:#9ca3af;--ac:#818cf8;--bd:#374151}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.45 system-ui,-apple-system,Segoe UI,sans-serif}
+.w{max-width:760px;margin:0 auto;padding:16px}h1{font-size:22px;margin:4px 0 14px}h2{font-size:18px;margin:0 0 10px}
+.c{background:var(--card);border:1px solid var(--bd);border-radius:16px;padding:14px;margin-bottom:12px}
+input,select,textarea,button{font:inherit;color:var(--tx);background:var(--bg);border:1px solid var(--bd);border-radius:10px;padding:9px 10px;width:100%}
+textarea{min-height:60px;resize:vertical}label{display:block;font-size:13px;color:var(--mu);margin:8px 0 3px}
+button{width:auto;cursor:pointer;background:var(--ac);color:#fff;border:0;font-weight:600}button.g{background:transparent;color:var(--ac);border:1px solid var(--ac)}button.d{background:#dc2626}
+.r{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.r>*{flex:1 1 140px}.r>button{flex:0 0 auto}
+.av{width:56px;height:56px;border-radius:50%;object-fit:cover;background:var(--ac);color:#fff;display:inline-flex;align-items:center;justify-content:center;font-weight:700;font-size:22px;flex:0 0 auto}
+.st{display:flex;align-items:center;gap:12px;cursor:pointer}.st b{display:block}.st span{color:var(--mu);font-size:13px}
+.em{display:flex;gap:8px}.em button{background:var(--bg);border:2px solid var(--bd);font-size:28px;padding:4px 12px}.em button.on{border-color:var(--ac)}
+.hid{display:none}.mu{color:var(--mu);font-size:13px}.rep{border-top:1px solid var(--bd);padding:10px 0}
+#ov{position:fixed;inset:0;background:rgba(0,0,0,.6);overflow:auto;padding:12px;z-index:9}#ov .p{background:#fff;color:#111;max-width:720px;margin:0 auto;border-radius:12px;padding:18px}
+body.auth{--bg:#0a0a0a;--card:#161616;--tx:#f5f5f5;--mu:#a3a3a3;--bd:#2e2e2e;--ac:#dc2626;background:#000}body.auth input:focus{outline:2px solid #dc2626;border-color:#dc2626}.auth-w{max-width:400px;margin:0 auto;padding-top:8vh}.lk{background:none;border:0;color:#f87171;padding:6px 0;font-weight:600;text-decoration:underline}.err{color:#f87171;font-size:14px;min-height:20px;margin:8px 0}
+@media print{body *{visibility:hidden}#doc,#doc *{visibility:visible}#doc{position:absolute;left:0;top:0;width:100%}}
+</style></head><body><div class="w" id="app"><p class="mu">Cargando…</p></div>
+<div id="ov" class="hid"><div class="p"><div class="r" style="margin-bottom:10px"><button id="bdl">Descargar (.doc)</button><button id="bpr" class="g">Imprimir / PDF</button><button id="bcl" class="g">Cerrar</button></div><div id="doc"></div></div></div>
+<script>
+const $=s=>document.querySelector(s),app=$("#app");
+let role=null,db,isOwner=false,tUser=null,aMode="reg",aErr="",students=[],sel=null,parentId=null,draft=null,msg="";
+const SC={"100":[0,100,1,"0-100"],"5":[1,5,0.1,"1.0-5.0"],"10":[0,10,0.1,"0-10"]};
+const gt=r=>{const m=SC[r.scale||"100"][1];return r.grade!==""&&r.grade!=null?esc(r.grade)+"/"+(m==5?"5.0":m==10?"10":"100"):""};
+const E=["😀","😐","☹️"],EN=["Excelente","Regular","Necesita mejorar"],LV=["Excelente","Bueno","En proceso","Inicial"];
+const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const hash=async t=>{const b=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(t));return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,"0")).join("")};
+const today=()=>new Date().toISOString().slice(0,10);
+const ini=n=>esc((n||"?").trim().charAt(0).toUpperCase());
+const avatar=(s,sz)=>s.avatar?`<img class="av" ${sz?`style="width:${sz}px;height:${sz}px"`:""} src="${s.avatar}" alt="">`:`<span class="av" ${sz?`style="width:${sz}px;height:${sz}px"`:""}>${ini(s.name)}</span>`;
+function resize(file,max,q){return new Promise(res=>{const r=new FileReader();r.onload=()=>{const i=new Image();i.onload=()=>{const k=Math.min(1,max/Math.max(i.width,i.height)),c=document.createElement("canvas");c.width=i.width*k;c.height=i.height*k;c.getContext("2d").drawImage(i,0,0,c.width,c.height);res(c.toDataURL("image/jpeg",q))};i.src=r.result};r.readAsDataURL(file)})}
+const LS="reportes_estudiantes_v1";
+const LT="reportes_docentes_v1";
+let teachers=[];
+function loadT(){try{teachers=JSON.parse(localStorage.getItem(LT)||"[]")}catch(e){teachers=[]}}
+function persist(){localStorage.setItem(LS,JSON.stringify(students))}
+async function save(s){const i=students.findIndex(x=>x.id===s.id);if(i<0)students.push(s);else students[i]=s;try{persist()}catch(e){msg="No se pudo guardar (almacenamiento lleno): "+e.message}render()}
+function dlFile(name,data,type){const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([data],{type}));a.download=name;document.body.appendChild(a);a.click();a.remove()}
+function init(){
+ if(location.hash==="#padres"){role="p";isOwner=false}
+ try{students=JSON.parse(localStorage.getItem(LS)||"[]")}catch(e){students=[]}
+ loadT();
+ render();
+}
+function chooser(){
+ app.innerHTML=`<h1 style="text-align:center;margin-top:40px">📒 Reportes diarios</h1><p class="mu" style="text-align:center">¿Quién eres?</p><div class="c st" id="rt" style="justify-content:center;font-size:20px;padding:22px"><b>👩‍🏫 Soy docente</b></div><div class="c st" id="rp" style="justify-content:center;font-size:20px;padding:22px"><b>👨‍👩‍👧 Soy padre / madre</b></div>`;
+ $("#rt").onclick=()=>{role="t";isOwner=true;parentId=null;aErr="";aMode=teachers.length?aMode:"reg";render()};
+ $("#rp").onclick=()=>{role="p";isOwner=false;pLogged=null;parentId=null;render()};
+}
+function render(){
+ const need=role==="t"&&isOwner&&!tUser;
+ document.body.classList.toggle("auth",need);
+ if(!role)return chooser();
+ if(need)return authView();
+ if(isOwner&&!parentId)return teacher();
+ parentView();
+}
+/* ---------- REGISTRO DOCENTE ---------- */
+function authView(){
+ const reg=aMode==="reg";
+ app.innerHTML=`<div class="auth-w"><h1 style="text-align:center;font-size:26px">👩‍🏫 ${reg?"Registro de docente":"Ingreso de docente"}</h1><div class="c"><label>Nombre de usuario</label><input id="au" autocomplete="username" autocapitalize="none" autocorrect="off"><label>Contraseña</label><input id="ap" type="password" autocomplete="${reg?"new-password":"current-password"}">${reg?'<label>Repetir contraseña</label><input id="ap2" type="password" autocomplete="new-password">':""}<p class="err" id="ae">${esc(aErr)}</p><button id="ab" style="width:100%">${reg?"Crear cuenta":"Entrar"}</button></div><div class="r" style="justify-content:space-between"><button class="lk" id="asw">${reg?"¿Ya tienes cuenta? Inicia sesión":"¿Eres nuevo? Regístrate"}</button><button class="lk" id="abk">← Inicio</button></div></div>`;
+ const go=async()=>{
+  const u=$("#au").value.trim(),p=$("#ap").value,key=u.toLowerCase();
+  if(!u||!p){aErr="Escribe usuario y contraseña.";return render()}
+  if(reg){
+   if(p.length<4){aErr="La contraseña debe tener al menos 4 caracteres.";return render()}
+   if(p!==$("#ap2").value){aErr="Las contraseñas no coinciden.";return render()}
+   if(teachers.some(t=>t.user.toLowerCase()===key)){aErr="Ese nombre de usuario ya existe.";return render()}
+   const first=!teachers.length;
+   teachers.push({user:u,pass:await hash(p)});
+   try{localStorage.setItem(LT,JSON.stringify(teachers))}catch(e){aErr="No se pudo guardar el registro.";teachers.pop();return render()}
+   if(first){students.forEach(x=>{if(!x.doc)x.doc=u});try{persist()}catch(e){}}
+   tUser=u;aErr="";msg="";sel=null;draft=null;render();
+  }else{
+   const t=teachers.find(x=>x.user.toLowerCase()===key);
+   if(t&&t.pass===await hash(p)){tUser=t.user;aErr="";msg="";sel=null;draft=null;render()}
+   else{aErr="Usuario o contraseña incorrectos.";render()}
+  }
+ };
+ $("#ab").onclick=go;
+ app.querySelectorAll("input").forEach(i=>i.onkeydown=e=>{if(e.key==="Enter")go()});
+ $("#asw").onclick=()=>{aMode=reg?"in":"reg";aErr="";render()};
+ $("#abk").onclick=()=>{role=null;isOwner=false;aErr="";render()};
+}
+/* ---------- DOCENTE ---------- */
+function teacher(){
+ const mine=students.filter(x=>x.doc===tUser),s=mine.find(x=>x.id===sel);
+ let h=`<div class="r" style="flex-wrap:nowrap"><h1 style="flex:1">📒 Reportes diarios</h1><button class="g" onclick="role=null;isOwner=false;render()">Cambiar rol</button><button class="g" onclick="tUser=null;role=null;isOwner=false;sel=null;draft=null;msg='';render()">Salir</button></div><p class="mu" style="margin-top:-6px">Docente: <b>${esc(tUser)}</b></p>${msg?`<p class="mu">${esc(msg)}</p>`:""}`;
+ h+=`<div class="c"><h2>Agregar estudiante</h2><div class="r"><input id="nn" placeholder="Nombre completo"><input id="np" placeholder="Contraseña para el padre"><button id="na">Agregar</button></div></div>`;
+ h+=`<div class="c"><h2>Datos y padres</h2><p class="mu">Todo se guarda en este navegador. Para que un padre vea el reporte: exporta los datos, envíale este HTML y el archivo, y que abra el HTML, toque <b>Soy padre / madre</b> e importe los datos.</p><div class="r"><button class="g" id="ex">Exportar datos</button><label style="margin:0">Importar datos<input type="file" id="im" accept=".json"></label></div></div>`;
+ h+=`<div class="c"><h2>Estudiantes (${mine.length})</h2>`+(mine.length?mine.sort((a,b)=>a.name.localeCompare(b.name)).map(x=>`<div class="rep st" data-s="${x.id}">${avatar(x)}<div><b>${esc(x.name)}</b><span>${(x.reports||[]).length} reportes</span></div></div>`).join(""):'<p class="mu">Aún no hay estudiantes.</p>')+`</div>`;
+ if(s)h+=studentCard(s);
+ app.innerHTML=h;
+ $("#ex").onclick=()=>dlFile("datos_estudiantes.json",JSON.stringify(mine),"application/json");$("#im").onchange=e=>imp(e.target);
+ $("#na").onclick=async()=>{const n=$("#nn").value.trim(),p=$("#np").value;if(!n||!p){msg="Escribe nombre y contraseña.";return render()}
+  const o={id:"s"+Date.now().toString(36),name:n,pass:await hash(p),avatar:"",reports:[],doc:tUser};sel=o.id;msg="";await save(o)};
+ app.querySelectorAll("[data-s]").forEach(e=>e.onclick=()=>{sel=e.dataset.s;draft=null;render();window.scrollTo(0,document.body.scrollHeight)});
+ if(s)bindStudent(s);
+}
+function newDraft(){return{id:"r"+Date.now().toString(36),date:today(),mood:0,att:"Presente",grade:"",scale:localStorage.getItem("reportes_scale")||"100",task:"",comp:"",rub:[["",0],["",0],["",0]],conduct:"",obs:"",img:""}}
+function studentCard(s){
+ if(!draft)draft=newDraft();const d=draft;
+ let h=`<div class="c"><div class="r" style="flex-wrap:nowrap">${avatar(s)}<div style="flex:1"><h2 style="margin:0">${esc(s.name)}</h2><label style="margin:0">Cambiar foto de perfil <input type="file" id="av" accept="image/*"></label></div></div>
+ <label>Cambiar contraseña del padre</label><div class="r"><input id="cp" placeholder="Nueva contraseña"><button class="g" id="cpb">Guardar</button></div></div>
+ <div class="c"><h2>Nuevo reporte</h2><div class="r"><div><label>Fecha</label><input type="date" id="fd" value="${d.date}"></div><div><label>Asistencia</label><select id="fa">${["Presente","Tarde","Ausente"].map(a=>`<option ${a==d.att?"selected":""}>${a}</option>`).join("")}</select></div><div><label>Escala de nota</label><select id="fsc">${Object.keys(SC).map(k=>`<option value="${k}" ${d.scale==k?"selected":""}>${SC[k][3]}</option>`).join("")}</select></div><div><label>Nota</label><input type="number" id="fg" min="${SC[d.scale][0]}" max="${SC[d.scale][1]}" step="${SC[d.scale][2]}" value="${esc(d.grade)}"></div></div>
+ <label>Clasificación del día</label><div class="em">${E.map((e,i)=>`<button data-m="${i}" class="${d.mood==i?"on":""}">${e}</button>`).join("")}</div>
+ <label>Asignación (en qué consistía)</label><textarea id="ft">${esc(d.task)}</textarea>
+ <label>Competencias</label><textarea id="fc">${esc(d.comp)}</textarea>
+ <label>Rúbrica de evaluación</label>${d.rub.map((r,i)=>`<div class="r"><input data-rc="${i}" placeholder="Criterio" value="${esc(r[0])}"><select data-rl="${i}">${LV.map((l,j)=>`<option value="${j}" ${r[1]==j?"selected":""}>${l}</option>`).join("")}</select></div>`).join("")}
+ <button class="g" id="ra" style="margin-top:8px">+ Criterio</button>
+ <label>Conducta</label><textarea id="fo">${esc(d.conduct)}</textarea>
+ <label>Observaciones</label><textarea id="fb">${esc(d.obs)}</textarea>
+ <label>Imagen del trabajo (opcional)</label><input type="file" id="fi" accept="image/*">${d.img?`<img src="${d.img}" style="max-width:140px;border-radius:10px;margin-top:6px">`:""}
+ <div class="r" style="margin-top:12px"><button id="sv">Guardar reporte</button><button class="g" id="dg">Ver parte de hoy</button><button class="g" id="pv">Vista del padre</button><button class="d" id="dl">Eliminar estudiante</button></div></div>
+ <div class="c"><h2>Historial</h2>`+((s.reports||[]).length?[...s.reports].sort((a,b)=>b.date.localeCompare(a.date)).map(r=>`<div class="rep"><b>${E[r.mood]} ${r.date}</b> · ${esc(r.att)}${gt(r)?" · "+gt(r):""}<br><span class="mu">${esc(r.task).slice(0,90)}</span><div class="r" style="margin-top:6px"><button class="g" data-doc="${r.id}">Documento</button><button class="g" data-del="${r.id}">Borrar</button></div></div>`).join(""):'<p class="mu">Sin reportes.</p>')+`</div>`;
+ return h;
+}
+function grab(){if(!draft)return;const g=i=>$("#"+i)&&$("#"+i).value;draft.date=g("fd")||draft.date;draft.att=g("fa")||draft.att;draft.scale=g("fsc")||draft.scale;draft.grade=g("fg");if(draft.grade!==""){const q=SC[draft.scale];draft.grade=String(Math.min(q[1],Math.max(q[0],+draft.grade)))}draft.task=g("ft");draft.comp=g("fc");draft.conduct=g("fo");draft.obs=g("fb");
+ app.querySelectorAll("[data-rc]").forEach(e=>draft.rub[e.dataset.rc][0]=e.value);app.querySelectorAll("[data-rl]").forEach(e=>draft.rub[e.dataset.rl][1]=+e.value)}
+function bindStudent(s){
+ $("#av").onchange=async e=>{if(e.target.files[0]){s.avatar=await resize(e.target.files[0],140,.8);await save(s)}};
+ $("#cpb").onclick=async()=>{const v=$("#cp").value;if(v){s.pass=await hash(v);await save(s);msg="Contraseña actualizada.";render()}};
+ app.querySelectorAll("[data-m]").forEach(b=>b.onclick=()=>{grab();draft.mood=+b.dataset.m;render()});
+ $("#fsc").onchange=()=>{grab();draft.scale=$("#fsc").value;localStorage.setItem("reportes_scale",draft.scale);draft.grade="";render()};
+ $("#ra").onclick=()=>{grab();draft.rub.push(["",0]);render()};
+ $("#fi").onchange=async e=>{if(e.target.files[0]){grab();draft.img=await resize(e.target.files[0],480,.6);render()}};
+ $("#sv").onclick=async()=>{grab();s.reports=(s.reports||[]).concat([{...draft,rub:draft.rub.filter(r=>r[0].trim())}]);draft=null;msg="Reporte guardado.";await save(s)};
+ $("#dg").onclick=()=>{grab();showDoc(s,{...draft,rub:draft.rub.filter(r=>r[0].trim())})};
+ $("#pv").onclick=()=>{parentId=s.id;render()};
+ $("#dl").onclick=async()=>{if(confirm("¿Eliminar a "+s.name+" y todos sus reportes?")){students=students.filter(x=>x.id!==s.id);persist();sel=null;render()}};
+ app.querySelectorAll("[data-doc]").forEach(b=>b.onclick=()=>showDoc(s,s.reports.find(r=>r.id==b.dataset.doc)));
+ app.querySelectorAll("[data-del]").forEach(b=>b.onclick=async()=>{s.reports=s.reports.filter(r=>r.id!=b.dataset.del);await save(s)});
+}
+/* ---------- PADRES ---------- */
+let pLogged=null,pErr="";
+function parentView(){
+ const s=students.find(x=>x.id===(parentId||pLogged));
+ if(!s||(!parentId&&!pLogged)){
+  app.innerHTML=`<h1>👨‍👩‍👧 Reporte de mi hijo/a</h1><button class="g" onclick="role=null;render()" style="margin-bottom:10px">← Inicio</button><div class="c"><label>Nombre del estudiante</label><input id="pn"><label>Contraseña</label><input id="pp" type="password"><p class="mu">${esc(pErr)}</p><button id="pg">Entrar</button></div><div class="c"><label>Importar datos enviados por el docente</label><input type="file" id="pim" accept=".json"></div>`;
+  $("#pim").onchange=e=>imp(e.target);
+  $("#pg").onclick=async()=>{const n=$("#pn").value.trim().toLowerCase(),h=await hash($("#pp").value);const f=students.find(x=>x.name.trim().toLowerCase()==n&&x.pass==h);if(f){pLogged=f.id;pErr=""}else pErr="Nombre o contraseña incorrectos.";render()};return}
+ const rs=[...(s.reports||[])].sort((a,b)=>b.date.localeCompare(a.date));
+ app.innerHTML=`${isOwner?'<button class="g" id="bk">← Volver al panel docente</button>':""}<div class="c st" style="cursor:default">${avatar(s,72)}<div><h2 style="margin:0">${esc(s.name)}</h2><span>${rs.length} reportes</span></div></div>`+(rs.length?rs.map(r=>`<div class="c"><b style="font-size:20px">${E[r.mood]} ${r.date}</b> <span class="mu">${EN[r.mood]} · ${esc(r.att)}${gt(r)?" · Nota "+gt(r):""}</span><p>${esc(r.task)}</p><button class="g" data-doc="${r.id}">Ver documento</button></div>`).join(""):'<div class="c mu">Aún no hay reportes.</div>')+(isOwner?"":'<button class="g" id="lo">Salir</button>');
+ if($("#bk"))$("#bk").onclick=()=>{parentId=null;render()};if($("#lo"))$("#lo").onclick=()=>{pLogged=null;render()};
+ app.querySelectorAll("[data-doc]").forEach(b=>b.onclick=()=>showDoc(s,rs.find(r=>r.id==b.dataset.doc)));
+}
+/* ---------- DOCUMENTO ---------- */
+function docHTML(s,r){
+ const T="border:1px solid #ccc;padding:6px 8px;text-align:left";
+ const av=s.avatar?`<img src="${s.avatar}" width="90" height="90" style="border-radius:50%;object-fit:cover">`:`<div style="width:90px;height:90px;border-radius:50%;background:#4f46e5;color:#fff;font-size:40px;line-height:90px;text-align:center">${ini(s.name)}</div>`;
+ const sec=(t,b)=>`<h3 style="color:#4f46e5;border-bottom:2px solid #e5e7eb;padding-bottom:3px;margin:18px 0 6px">${t}</h3>${b}`;
+ return `<div style="font-family:Arial,sans-serif;color:#111"><table style="width:100%;border-collapse:collapse"><tr><td style="width:100px;vertical-align:middle">${av}</td><td style="vertical-align:middle"><h1 style="margin:0;font-size:26px">${esc(s.name)}</h1><div style="color:#666">Reporte del ${esc(r.date)} · Asistencia: ${esc(r.att)}${gt(r)?" · Nota: "+gt(r):""}</div></td><td style="text-align:center;font-size:50px;width:100px">${E[r.mood]}<div style="font-size:12px;color:#444">${EN[r.mood]}</div></td></tr></table>`
+ +sec("Asignación",`<p>${esc(r.task).replace(/\n/g,"<br>")||"—"}</p>`)
+ +sec("Competencias",`<p>${esc(r.comp).replace(/\n/g,"<br>")||"—"}</p>`)
+ +sec("Rúbrica de evaluación",r.rub&&r.rub.length?`<table style="width:100%;border-collapse:collapse"><tr><th style="${T}">Criterio</th><th style="${T}">Nivel</th></tr>${r.rub.map(x=>`<tr><td style="${T}">${esc(x[0])}</td><td style="${T}">${LV[x[1]]}</td></tr>`).join("")}</table>`:"<p>—</p>")
+ +sec("Conducta",`<p>${esc(r.conduct).replace(/\n/g,"<br>")||"—"}</p>`)
+ +sec("Observaciones",`<p>${esc(r.obs).replace(/\n/g,"<br>")||"—"}</p>`)
+ +(r.img?sec("Trabajo del estudiante",`<img src="${r.img}" style="max-width:260px">`):"")+`</div>`;
+}
+let cur=null;
+function showDoc(s,r){cur={s,r};$("#doc").innerHTML=docHTML(s,r);$("#ov").classList.remove("hid")}
+$("#bcl").onclick=()=>$("#ov").classList.add("hid");
+$("#bpr").onclick=()=>{try{window.print()}catch(e){alert("Usa la opción de descargar.")}};
+$("#bdl").onclick=()=>dlFile(cur.s.name.replace(/\s+/g,"_")+"_"+cur.r.date+".doc",'<html><head><meta charset="utf-8"></head><body>'+docHTML(cur.s,cur.r)+"</body></html>","application/msword");
+function imp(inp){const f=inp.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{try{const d=JSON.parse(r.result);if(!Array.isArray(d))throw 0;if(isOwner&&tUser)students=students.filter(x=>x.doc!==tUser).concat(d.map(x=>({...x,doc:tUser})));else students=d;persist();msg="Datos importados.";render()}catch(e){alert("Archivo no válido.")}};r.readAsText(f)}
+init();
+</script></body></html>
